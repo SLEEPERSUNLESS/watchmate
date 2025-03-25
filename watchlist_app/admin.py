@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import WatchList, StreamPlatform, Review
+from .models import WatchList, StreamPlatform, Review, User
 
 # Register your models here.
 
