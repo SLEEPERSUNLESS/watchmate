@@ -1,25 +1,49 @@
 from watchlist_app.models import WatchList, StreamPlatform, Review
 from watchlist_app.api.serializers import WatchListSerializer, StreamPlatformSerializer, ReviewSerializer
 from rest_framework.response import Response
+from rest_framework.exceptions import ValidationError
 # from rest_framework.decorators import api_view
 from rest_framework.views import APIView
 from rest_framework import generics, mixins, viewsets, status
 from django.shortcuts import get_object_or_404
+from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
+from .permissions import AdminOrReadOnly, ReviewUserOrReadOnly
 
 
 class ReviewCreate(generics.CreateAPIView):
     serializer_class = ReviewSerializer
 
+    def get_queryset(self):
+        return Review.objects.all()
+
     def perform_create(self, serializer):
         pk = self.kwargs.get('pk')
         watchlist = WatchList.objects.get(pk=pk)
 
+        review_user = self.request.user
+        review_queryset = Review.objects.filter(
+            watchlist=watchlist, review_user=review_user)
+
+        if review_queryset.exists():
+            raise ValidationError("You have already reviewed this product!")
+
+        watchlist.number_rating = watchlist.number_rating + 1
+
+        if watchlist.number_rating == 0:
+            watchlist.avg_rating = serializer.validated_data['rating']
+        else:
+            watchlist.avg_rating = (
+                watchlist.avg_rating + serializer.validated_data['rating']) / watchlist.number_rating
+
+        watchlist.save()
+
         # prawy watchlist jest dwie linijki wyzej
-        serializer.save(watchlist=watchlist)
+        serializer.save(watchlist=watchlist, review_user=review_user)
 
 
 class ReviewList(generics.ListAPIView):
     serializer_class = ReviewSerializer
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         pk = self.kwargs['pk']
@@ -29,6 +53,7 @@ class ReviewList(generics.ListAPIView):
 class ReviewDetail(generics.RetrieveUpdateDestroyAPIView):
     queryset = Review.objects.all()
     serializer_class = ReviewSerializer
+    permission_classes = [ReviewUserOrReadOnly]
 
 # class ReviewDetail(mixins.RetrieveModelMixin, generics.GenericAPIView):
 #     queryset = Review.objects.all()
@@ -87,14 +112,14 @@ class WatchDetailAV(APIView):
         movie.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+
 class StreamPlatformVS(viewsets.ModelViewSet):
     queryset = StreamPlatform.objects.all()
     serializer_class = StreamPlatformSerializer
-    
-    
-    
+
+
 # class StreamPlatformVS(viewsets.ViewSet):
-    
+
 #     def list(self, request):
 #         queryset = StreamPlatform.objects.all()
 #         serializer = StreamPlatformSerializer(queryset, many=True)
@@ -113,7 +138,7 @@ class StreamPlatformVS(viewsets.ModelViewSet):
 #             return Response(serializer.data)
 #         else:
 #             return Response(serializer.errors)
-        
+
 #     def destroy(self, request, pk):
 #         platform = StreamPlatform.objects.get(pk=pk)
 #         platform.delete()
